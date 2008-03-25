@@ -1,0 +1,6 @@
+= rb_FORTH : A pseudo FORTH implementation in Ruby
+
+The goal is to explore stack-oriented programming while benefitting of
+a rich a safe environment.
+
+This implementation doesn't follow the FORTH standard if any exist.
