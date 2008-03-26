@@ -3,7 +3,7 @@
 # and return self.
 #
 # Forth is also the data stack
-class Forth < Array
+class Facts < Array
   # All Forth errors inherit from this
   class ForthError < StandardError; end
 
@@ -11,7 +11,7 @@ class Forth < Array
   class StackOverflow < ForthError; end
 
   # Non-factor utility methods
-  UTIL_METH = %w[push << pop inspect]
+  UTIL_METH = %w[push pop inspect]
 
   unless @been_here_before
     # Hide public methods
@@ -185,3 +185,11 @@ class Forth < Array
   self end
 
 end
+
+module Kernel
+  # Initializes a stack object with the given stack items
+  def Facts(*init_stack)
+    ::Facts.new(init_stack)
+  end
+end
+
