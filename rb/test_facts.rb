@@ -2,9 +2,8 @@ require 'test/unit'
 require 'facts'
 
 module FactsHelper
-  def s(*arr)
-    @s = Facts.new(arr)
-  end
+  def s(*stack); Facts.new(stack);end
+  def ev(str); s(str).eval; end
 end
 
 class StackManipTests < Test::Unit::TestCase
@@ -64,37 +63,23 @@ end
 class WordOperationsTests < Test::Unit::TestCase
   include FactsHelper
 
-  def test_def_set_with_lambda
-    l = lambda{ push(6); add }
-    ss = s(l, "add6")
-    assert_equal([], ss.def_set)
+  def test_word_parse
+    assert_equal([[6, :add]], s("6 add").parse)
+  end
+
+  def test_set
+    ss = s("6 add", "add6")
+    assert_equal([], ss.set)
     assert_equal([11], ss.push(5).add6)
   end
 
-  def test_def_set_with_string
-    ss = s("6 add", "add6")
-    assert_equal([], ss.def_set)
-    assert_equal([11], ss.push(5).add6)
+  def test_wp
+    # TODO
   end
 
-  def test_def_get_with_lambda
-    l = lambda{ push(6); add }
-    ss = s(l, "add6")
-    assert_equal([], ss.def_set)
-    assert_equal([l], ss.push("add6").def_get)
+  def test_call
+    assert_equal([13], s([7, 6, :add]).call)
   end
 
-  def test_def_get_with_string
-    ss = s("6 add", "add6")
-    assert_equal([], ss.def_set)
-    assert_equal([["6", "add"]], ss.push("add6").def_get)
-  end
-
-end
-
-class KernelMethodsTests < Test::Unit::TestCase
-  def test_Facts
-    assert_equal([3,4,5], Facts(3, 4, 5))
-  end
 end
 

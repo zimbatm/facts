@@ -45,7 +45,7 @@ class Facts < Array
     @dict = {}
   end
   
-  ## Stack manipulation:
+## Stack manipulation:
 
   # (a -- a a)
   def dup; assert_in(1)
@@ -74,7 +74,7 @@ class Facts < Array
     x2 = pop; pop; push(x2)
   self end
 
-  ## Arithmetic:
+## Arithmetic:
 
   # (a b -- (a+b) )
   def add; assert_in(2)
@@ -106,90 +106,87 @@ class Facts < Array
     push( pop >> 1 )
   self end
 
-  ## Word operations:
+## Word operations:
 
-  # (def word -- )
-  def def_set; assert_in(2)
-    w=pop; @dict[w] = (x=pop)
+  # (str -- blk)
+  # FIXME: Add closures, detect litterals
+  def parse; assert_in(1)
+    push(pop.split(/\s+/).map do |term|
+      case term
+      when /^\"(.*)\"$/
+        $1
+      when /^[+-]?\d+$/
+        term.to_i
+      when /^[+-]?(\d+\.\d+)$/
+        term.to_f
+      else
+        term.to_sym
+      end
+    end)
   self end
 
-  # (word -- def)
-  def def_get; assert_in(1)
+  # ( blk/numeric/word -- * )
+  def call; assert_in(1)
     word = pop
-    if wdef = (@dict[word] || public_methods(word) rescue nil)
-      push(wdef)
+    case word
+    when Array
+      word.each{|w| push(w); call}
+    when Numeric, String
+      push word
+    when Symbol
+      if wdef = @dict[word.to_s]
+        push(wdef).call
+      else
+        meth = method(word) rescue nil
+        if meth && meth.arity == 0
+          meth.call
+        else
+          raise NoMethodError, "undefined method `#{word}' for #{self.inspect}"
+        end
+      end
     else
-      push(nil)
+      raise NotImplementedError
     end
+  self end
+
+  # (str -- *)
+  # parses and evals
+  def eval; assert_in(1)
+    parse; call
+  self end
+
+  # (def word -- )
+  # sets a definition to a word
+  def set; assert_in(2)
+    swap; parse; swap
+    @dict[pop] = pop
   self end
 
   # ( -- )
   # print defined words
   def wp
-    puts((public_methods.reject{|m| m=~/^__/ || UTIL_METH.include?(m)} + @dict.keys).sort.inspect)
+    puts((public_methods(false).reject{|m| m=~/^__/ || UTIL_METH.include?(m)} + @dict.keys).sort.inspect)
   self end
 
-  ## Flow control:
-
-  # ( blk -- * )
-  def call; assert_in(1)
-    word = pop
-    case word
-    when Proc
-      word.call
-    when Array
-      word.each{|w| push(w); call}
-    when Numeric
-      push word
-    when /^[+-]?(\d+)$/ # integer litteral
-      push word.to_i
-    when /^[+-]?(\d+\.\d+)$/ # float litteral
-      push word.to_f
-    else
-      word = word.to_s
-      if wdef = @dict[word]
-        if wdef.kind_of?(Array)
-          push(wdef).call
-        # methods with n-args are considered as forth methods and don't need
-        # popping / pushing
-        elsif wdef.arity < 0
-          wdef.call
-        elsif wdef.arity == 0
-          push(wdef.call)
-        elsif size < wdef.arity
-          raise StackUnderflow
-        else
-          push(wdef.call(slice!(-wdef.arity, wdef.arity)))
-        end
-      else # litteral number ?
-        raise NoMethodError, "undefined method `#{word}' for #{self.inspect}"
-      end
-    end
-  self end
-
+## Flow control:
+  
   # blk cond -- blk
-  def call_if; assert_in(2)
+  def if; assert_in(2)
     cond = pop
     call if cond
   self end
 
-  # (str -- blk)
-  # FIXME: Add closures
-  def parse; assert_in(1)
-    push(pop.split(" "))
-  self end
-
-  # (str -- result)
-  def eval; assert_in(1)
-    parse; call
-  self end
-
 end
+
+if __FILE__ == $0
 
 module Kernel
-  # Initializes a stack object with the given stack items
-  def Facts(*init_stack)
-    ::Facts.new(init_stack)
-  end
+  def l; load __FILE__ end
+  def s(*stack); Facts.new(stack);end
+  def ev(str); s(str).eval; end
 end
 
+require 'irb'
+require 'irb/completion'
+IRB.start
+end
