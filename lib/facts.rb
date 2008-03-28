@@ -109,18 +109,20 @@ class Facts < Array
 ## Word operations:
 
   # (str -- blk)
-  # FIXME: Add closures, detect litterals
+  # FIXME: Add closures
   def parse; assert_in(1)
-    push(pop.split(/\s+/).map do |term|
-      case term
-      when /^\"(.*)\"$/
-        $1
-      when /^[+-]?\d+$/
-        term.to_i
-      when /^[+-]?(\d+\.\d+)$/
-        term.to_f
+    push(Tokenizer.new(pop).map do |type,val|
+      case type
+      when :string, :block
+        val
+      when :integer
+        val.to_i
+      when :float
+        val.to_f
+      when :symbol
+        val.to_sym
       else
-        term.to_sym
+        raise NotImplementedError, "unknown term type #{type.inspect}"
       end
     end)
   self end
@@ -172,9 +174,87 @@ class Facts < Array
   
   # blk cond -- blk
   def if; assert_in(2)
-    cond = pop
-    call if cond
+    pop ? call : pop
   self end
+
+
+  class Tokenizer
+    def initialize(str)
+      @str = str
+      @pos = -1
+    end
+
+    def next
+      type = nil
+      start = 0
+      while @pos < @str.length
+        @pos += 1
+        c = @str[@pos..@pos]
+        # TODO: finish this
+        case type
+        when nil # undef
+          case c
+          when /[\s\r\n]/: next
+          when '(':
+            type = :maybe_block
+            par_count = 1
+          when /['"]/
+            type = :maybe_string
+            quote_type = c
+            esc = false
+          when /[+\-\d]/
+            type = :maybe_integer
+          else
+            type = :symbol
+          end
+          start = @pos
+        when :maybe_block
+          if c == "("
+            par_count += 1
+          elsif c == ")"
+            par_count -= 1
+            return [:block, str[start+1 .. @pos-1]] if par_count == 1
+          end
+        when :maybe_string
+          if esc
+            esc = false
+          elsif c == '\\'
+            esc = true
+          elsif c == quote_type 
+            return [:string, @str[start+1 .. @pos-1]]
+          end
+        when :maybe_integer
+          if c == '.'
+            type = :maybe_float
+          elsif c == ' '
+            return [:integer, @str[start .. @pos]]
+          elsif c != /\d/
+            type = :symbol
+          end
+        when :maybe_float
+          if c == ' ' && @str[@pos-1] != ?.
+            return [:float, @str[start .. @pos]]
+          elsif c != /[\d\.]/
+            type = :symbol
+          end
+        when :symbol
+          if c == ' '
+            return [:symbol, @str[start .. @pos]]
+          end
+        end
+      end
+
+      return nil
+    end
+
+    def map(&block)
+      ret = []
+      while tok = self.next
+        ret << block.call(*tok)
+      end
+      ret
+    end
+  end
 
 end
 

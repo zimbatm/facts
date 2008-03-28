@@ -36,15 +36,19 @@ class BaseArithTests < Test::Unit::TestCase
 
   def test_add
     assert_equal([3], s(1,2).add)
+    assert_equal([3], ev("1 2 add"))
     assert_equal([-1], s(1,-2).add)
+    assert_equal([-1], ev("1 -2 add"))
   end
 
   def test_not
     assert_equal([false], s(true).not)
+    assert_equal([false], ev("1 not"))
   end
 
   def test_and
     assert_equal([1], s(7,9).and)
+    assert_equal([1], ev("7 9 and"))
   end
 
   def test_or
@@ -63,8 +67,13 @@ end
 class WordOperationsTests < Test::Unit::TestCase
   include FactsHelper
 
-  def test_word_parse
+  def test_parse
     assert_equal([[6, :add]], s("6 add").parse)
+  end
+
+  def test_recurse_parent_match
+    md = /\((?:[^()]*)\)/.match("zz ( a ( b ( c ) b ) a ) zz z")
+    assert_equal(3, md)
   end
 
   def test_set
@@ -81,5 +90,14 @@ class WordOperationsTests < Test::Unit::TestCase
     assert_equal([13], s([7, 6, :add]).call)
   end
 
+end
+
+class ConditionsTests < Test::Unit::TestCase
+  include FactsHelper
+
+  def test_if
+    assert_equal(["ok"], ev('"ok" 1 if'))
+    assert_equal([], ev('6 1 not if'))
+  end
 end
 
