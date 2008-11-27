@@ -1,32 +1,45 @@
+$:.unshift File.join(File.dirname(__FILE__), '..', 'lib')
+
 require 'test/unit'
 require 'facts'
 
 module FactsHelper
-  def s(*stack); Facts.new(stack);end
-  def ev(str); s(str).eval; end
+  def f(*stack)
+    f = Facts::Interp.new
+    f.__send__ :instance_variable_set, "@stack", stack
+    f
+  end
+  def assert_stack(stack, str)
+    case str
+    when String
+      str = f.eval(str)
+    end
+    s2 = str.stack
+    assert_equal(stack, s2)
+  end
 end
 
 class StackManipTests < Test::Unit::TestCase
   include FactsHelper
 
   def test_dup
-    assert_equal([3, 3], s(3).dup)
+    assert_stack ["a", "a"], "'a dup"
   end
 
   def test_drop
-    assert_equal([:sym], s(:sym, :bol).drop)
+    assert_stack ["a"], "'a 'b drop"
   end
 
   def test_over
-    assert_equal([:a, :b, :a], s(:a, :b).over)
+    assert_stack ["a", "b", "a"], "'a 'b over"
   end
 
   def test_swap
-    assert_equal([:b, :a], s(:a, :b).swap)
+    assert_stack ["b", "a"], "'a 'b swap"
   end
 
   def test_nip
-    assert_equal([:b], s(:a, :b).nip)
+    assert_stack ["b"] , "'a 'b nip"
   end
 
 end
@@ -35,59 +48,60 @@ class BaseArithTests < Test::Unit::TestCase
   include FactsHelper
 
   def test_add
-    assert_equal([3], s(1,2).add)
-    assert_equal([3], ev("1 2 add"))
-    assert_equal([-1], s(1,-2).add)
-    assert_equal([-1], ev("1 -2 add"))
+    assert_stack [3] , "1 2 add"
+    assert_stack [-1], "1 -2 add"
   end
 
   def test_not
-    assert_equal([false], s(true).not)
-    assert_equal([false], ev("1 not"))
+    assert_stack [false] , "true not"
+    assert_stack [false] , "1 not"
   end
 
   def test_and
-    assert_equal([1], s(7,9).and)
-    assert_equal([1], ev("7 9 and"))
+    assert_stack [1] , "7 9 and"
   end
 
   def test_or
-    assert_equal([15], s(7,9).or)
+    assert_stack [15] , "7 9 or"
   end
 
   def test_xor
-    assert_equal([14], s(7,9).xor)
+    assert_stack [14], "7 9 xor"
   end
 
   def test_rshift1
-    assert_equal([2], s(4).rshift1)
+    assert_stack [2], "4 rshift1"
   end
 end
 
 class WordOperationsTests < Test::Unit::TestCase
   include FactsHelper
+  WORD_COUNT = Facts::Interp.words.size
 
   def test_parse
-    assert_equal([[6, :add]], s("6 add").parse)
+    assert_stack [6, "6", 6], "6 [6] 6"
   end
 
   def test_recurse_parent_match
-    md = /\((?:[^()]*)\)/.match("zz ( a ( b ( c ) b ) a ) zz z")
-    assert_equal(3, md)
+    assert_stack [" some [rec [ urs [ ive ] ] ] stack "], "[ some [rec [ urs [ ive ] ] ] stack ] "
   end
 
-  def test_set
-    ss = s("6 add", "add6")
-    assert_equal([], ss.set)
-    assert_equal([11], ss.push(5).add6)
+  def test_def
+    x = f()
+    x.eval "[add] '+ def"
+    assert x.words.include?("+")
+
+    x.eval " 3 2 + "
+    assert_stack [5], x
   end
 
-  def test_wp
-    # TODO
-  end
+  #def test_call
+  #  assert_equal([13], s([7, 6, :add]).call)
+  #end
 
-  def test_call
-    assert_equal([13], s([7, 6, :add]).call)
+  def test_no_side_effects
+    assert_equal 0, Facts::Interp.stack.size
+    assert_equal WORD_COUNT, Facts::Interp.words.size
   end
 
 end
@@ -95,9 +109,19 @@ end
 class ConditionsTests < Test::Unit::TestCase
   include FactsHelper
 
-  def test_if
-    assert_equal(["ok"], ev('"ok" 1 if'))
-    assert_equal([], ev('6 1 not if'))
+  #def test_if
+  #  assert_equal(["ok"], ev('"ok" 1 if'))
+  #  assert_equal([], ev('6 1 not if'))
+  #end
+end
+
+
+class RubyChainingTests < Test::Unit::TestCase
+  include FactsHelper
+
+  def test_simple_case
+    assert_stack [6], f["3"]["3"].add
   end
+
 end
 

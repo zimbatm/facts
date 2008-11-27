@@ -1,184 +1,23 @@
 
-# All Forth methods must take no arguments
-# and return self.
-#
-# Forth is also the data stack
-class Facts < Array
-  # All Forth errors inherit from this
-  class ForthError < StandardError; end
+=begin facts notes
 
-  class StackUnderflow < ForthError; end
-  class StackOverflow < ForthError; end
+Data types are the same as ruby's for now, except for the quote
 
-  # Non-factor utility methods
-  UTIL_METH = %w[push pop inspect]
+=end
 
-  unless @been_here_before
-    # Hide public methods
-    private(*public_instance_methods.reject{|m| m=~/^__/ || UTIL_METH.include?(m)})
-    @been_here_before = true
-  end
+module Facts
+  # All errors inherit from this
+  class Error < StandardError; end
 
-  def assert_in(_size)
-    size < _size ? raise(StackUnderflow, "got #{size} in #{_size}") : self
-  end
-  private :assert_in
+  class StackUnderflow < Error; end
+  class StackOverflow < Error; end
+  class WordNotFound < Error; end
+  class ParseError < Error; end
 
-  # Forwards zero-arguments methods to the Forth interp.
-  def method_missing(word, *a, &blk)
-    if a.size == 0
-      push(word).call
-      self
-    else
-      super
-    end
-  end
-  private :method_missing
-
-  # Preparing the environment.
-  def initialize(init_stack = [])
-    super(init_stack)
-
-    # @rstack or return stack is delegated to Ruby's call stack
-
-    # initial dictionnary
-    @dict = {}
-  end
-  
-## Stack manipulation:
-
-  # (a -- a a)
-  def dup; assert_in(1)
-    push(last)
-  self end
-
-  # (a --)
-  def drop; assert_in(1)
-    pop
-  self end
-
-  # (a b -- a b a)
-  def over; assert_in(2)
-    x2 = pop; x1 = pop;
-    push(x1); push(x2); push(x1)
-  self end
-
-  # (a b -- b a)
-  def swap; assert_in(2)
-    x2 = pop; x1 = pop
-    push(x2); push(x1)
-  self end
-
-  # (a b -- b)
-  def nip; assert_in(2)
-    x2 = pop; pop; push(x2)
-  self end
-
-## Arithmetic:
-
-  # (a b -- (a+b) )
-  def add; assert_in(2)
-    swap; push(pop + pop)
-  self end
-
-  # (a -- ~a)
-  def not; assert_in(1)
-    push(!pop)
-  self end
-
-  # (a b -- (a&b) )
-  def and; assert_in(2)
-    swap; push(pop & pop)
-  self end
-
-  # (a b -- (a|b) )
-  def or; assert_in(2)
-    swap; push(pop | pop)
-  self end
-
-  # (a b -- (a^b) )
-  def xor; assert_in(2)
-    swap; push(pop ^ pop)
-  self end
-
-  # (a -- (a>>1) )
-  def rshift1; assert_in(1)
-    push( pop >> 1 )
-  self end
-
-## Word operations:
-
-  # (str -- blk)
-  # FIXME: Add closures
-  def parse; assert_in(1)
-    push(Tokenizer.new(pop).map do |type,val|
-      case type
-      when :string, :block
-        val
-      when :integer
-        val.to_i
-      when :float
-        val.to_f
-      when :symbol
-        val.to_sym
-      else
-        raise NotImplementedError, "unknown term type #{type.inspect}"
-      end
-    end)
-  self end
-
-  # ( blk/numeric/word -- * )
-  def call; assert_in(1)
-    word = pop
-    case word
-    when Array
-      word.each{|w| push(w); call}
-    when Numeric, String
-      push word
-    when Symbol
-      if wdef = @dict[word.to_s]
-        push(wdef).call
-      else
-        meth = method(word) rescue nil
-        if meth && meth.arity == 0
-          meth.call
-        else
-          raise NoMethodError, "undefined method `#{word}' for #{self.inspect}"
-        end
-      end
-    else
-      raise NotImplementedError
-    end
-  self end
-
-  # (str -- *)
-  # parses and evals
-  def eval; assert_in(1)
-    parse; call
-  self end
-
-  # (def word -- )
-  # sets a definition to a word
-  def set; assert_in(2)
-    swap; parse; swap
-    @dict[pop] = pop
-  self end
-
-  # ( -- )
-  # print defined words
-  def wp
-    puts((public_methods(false).reject{|m| m=~/^__/ || UTIL_METH.include?(m)} + @dict.keys).sort.inspect)
-  self end
-
-## Flow control:
-  
-  # blk cond -- blk
-  def if; assert_in(2)
-    pop ? call : pop
-  self end
-
-
+  # Simple syntax : quotes or symbols
   class Tokenizer
+    EOF = -1
+
     def initialize(str)
       @str = str
       @pos = -1
@@ -187,86 +26,291 @@ class Facts < Array
     def next
       type = nil
       start = 0
-      while @pos < @str.length
+      while @pos <= @str.length
         @pos += 1
-        c = @str[@pos..@pos]
-        # TODO: finish this
+
+        if @pos == @str.length
+          c = EOF
+        else
+          c = @str[@pos..@pos]
+        end
+
         case type
         when nil # undef
           case c
-          when /[\s\r\n]/: next
-          when '(':
-            type = :maybe_block
+          when EOF: return nil
+          when /\s/: next
+          when "[":
+            type = :quote
             par_count = 1
-          when /['"]/
-            type = :maybe_string
-            quote_type = c
-            esc = false
-          when /[+\-\d]/
-            type = :maybe_integer
           else
             type = :symbol
           end
           start = @pos
-        when :maybe_block
-          if c == "("
+        when :quote
+          case c
+          when EOF                  
+            raise ParseError, "Quote starting at #{start} never terminated"
+          when "["
             par_count += 1
-          elsif c == ")"
+          when "]"
             par_count -= 1
-            return [:block, str[start+1 .. @pos-1]] if par_count == 1
-          end
-        when :maybe_string
-          if esc
-            esc = false
-          elsif c == '\\'
-            esc = true
-          elsif c == quote_type 
-            return [:string, @str[start+1 .. @pos-1]]
-          end
-        when :maybe_integer
-          if c == '.'
-            type = :maybe_float
-          elsif c == ' '
-            return [:integer, @str[start .. @pos]]
-          elsif c != /\d/
-            type = :symbol
-          end
-        when :maybe_float
-          if c == ' ' && @str[@pos-1] != ?.
-            return [:float, @str[start .. @pos]]
-          elsif c != /[\d\.]/
-            type = :symbol
+            return [:quote, @str[start .. @pos].strip] if par_count == 0
           end
         when :symbol
-          if c == ' '
-            return [:symbol, @str[start .. @pos]]
+          if c == EOF || c =~ /\s/
+            return [:symbol, @str[start .. @pos].strip]
           end
         end
       end
 
       return nil
     end
-
-    def map(&block)
-      ret = []
-      while tok = self.next
-        ret << block.call(*tok)
-      end
-      ret
-    end
   end
+
+  # Prototype style
+  Interp = Object.new
+  Interp.__send__ :instance_variable_set, "@dict", {} # Hash holding the words
+  Interp.__send__ :instance_variable_set, "@stack", [] # Array representing the stack
+
+  # intepreter interface with Ruby
+  class << Interp
+    # Hide public methods
+    private( *public_instance_methods.reject{|m| m=~/^__/} )
+
+    # Adds `*a` to the stack
+    def push(*a) # utility
+      @stack.push(*a); self
+    end
+
+    # Removes an item from the stack
+    def pop # utility
+      @stack.pop
+    end
+
+    # Returns a list of defined words
+    def words # utility
+      @dict.keys.sort
+    end
+
+    # Gives the stack
+    attr_reader :stack
+    attr_reader :dict
+
+    # Calls an interpreter word with the given arguments
+    def call(name) # motor
+      #name = name.to_s
+      if w = @dict[name]
+        instance_eval(&w)
+      else # other lookups
+        case name
+        when /^\[.*\]$/ # quote
+          push(name[1..-2])
+        when /^'/ # single quote
+          push(name[1..-1])
+        when /^[+-]?\d+$/ # integer
+          push(name.to_i)
+        when /^[+-]?\d+\.\d+$/ # float
+          push(name.to_f)
+        # TODO: add hooks for extensible types
+        else
+          raise WordNotFound, "word `#{name}` does not exist in dictionary"
+        end
+      end
+      self
+    end
+    private :call
+
+    # (str -- *)
+    # parses and calls.
+    #
+    # this is the motor
+    def eval(str) # motor
+      t = Tokenizer.new(str.to_s)
+      while tok = t.next
+         call(tok[1])
+      end
+      self
+    end
+    alias [] eval
+    alias method_missing eval
+
+    # Used to define new axioms for the intepreter.
+    #
+    # The block arity is used to verify the input stack effect
+    #
+    # The block must return an array representing the resulting output stack
+    def axiom(name, &block)
+      raise ArgumentError, "block arity must be positive" if block.arity < 0
+      @dict[name.to_s] = proc do
+        _ar = block.arity
+        raise(StackUnderflow, "got #{@stack.size} in #{_ar} for `#{name}`") if @stack.size < _ar
+
+        args = []
+        _ar.times { args.unshift pop } if _ar > 0
+        ret = block.call(*args)
+
+        ret.each{|e| push(e) }
+      end 
+    end
+ 
+    # Creates a new interpreter
+    def new
+      n = clone
+      n.__send__ :instance_variable_set, "@dict", @dict.clone
+      n.__send__ :instance_variable_set, "@stack", @stack.clone
+      n
+    end
+
+    # Shows the stack and defined words in IRB for example, when using that object
+    remove_method :inspect
+    def inspect; "<s:#{@stack.inspect}, w:[#{words.map{|w| w.to_s}.join(' ')}]>" end
+  end
+
+  # Define axioms
+  Interp.__send__(:instance_eval) do
+
+## Word operations:
+
+    # Defines a new word
+    # TODO: put a warning if a word is redefined ?
+    # FIXME: dict not working ?
+    # NOTE: It seems like different dicts are used in different places
+    axiom :def do |quot,name|
+      @dict[name.to_s] = proc do eval(quot) end
+      []
+    end
+
+    axiom :eval do |quot|
+      eval(quot)
+      []
+    end
+
+    axiom :words do ||
+      [words]
+    end
+
+    axiom :print do |a|
+      puts a
+      []
+    end
+
+## Stack manipulation:
+
+    # (a -- a a)
+    axiom :dup do |a|
+      [a,a]
+    end
+
+    # (a --)
+    axiom :drop do |a| [] end
+
+    # (a b -- a b a)
+    axiom :over do |a,b|
+      [a,b,a]
+    end
+
+    # (a b -- b a)
+    axiom :swap do |a,b|
+      [b,a]
+    end
+
+    # (a b -- b)
+    axiom :nip do |a,b|
+      [b]
+    end
+
+## Arithmetic:
+
+    # (a b -- (a+b) )
+    axiom :add do |a,b|
+      [a+b]
+    end
+
+    # (a -- ~a)
+    axiom :not do |a|
+      [!a]
+    end
+
+    # (a b -- (a&b) )
+    axiom :and do |a,b|
+      [a & b]
+    end
+
+    # (a b -- (a|b) )
+    axiom :or do |a,b|
+      [a | b]
+    end
+
+    # (a b -- (a^b) )
+    axiom :xor do |a,b|
+      [a^b]
+    end
+
+    # (a -- (a>>1) )
+    axiom :rshift1 do |a|
+      [ a >> 1 ]
+    end
+
+    axiom :true do ||
+      [ true ]
+    end
+
+    axiom :false do ||
+      [ false ]
+    end
+
+    axiom :nil do ||
+      [ nil ]
+    end
+
+## Flow control:
+  
+    # blk cond -- blk
+    axiom :if do |quot_f,quot_t,quot_cond| # FIXME
+      eval quot_cond
+      eval(pop ? quot_t : quot_f)
+      []
+    end
+
+## Other words:
+    
+    eval "[drop] '# def" # is a comment, like [some comment]#
+
+  end # Interp.instance_eval &b
 
 end
 
 if __FILE__ == $0
 
-module Kernel
-  def l; load __FILE__ end
-  def s(*stack); Facts.new(stack);end
-  def ev(str); s(str).eval; end
+# REPL
+$i = Facts::Interp.new
+
+$i.axiom :exit do || exit end
+
+# Welcome
+puts "Use Ctrl+d or the `exit` word to exit"
+
+loop do
+begin
+   putc ">"
+   putc " "
+   line = gets
+   exit unless line
+   $i.eval line
+rescue Facts::Error => ex
+   puts "*** #{ex.class.name.gsub(/.*::/,'')}: #{ex.message}"
+ensure
+   puts "words: #{$i.words.join ' '}"
+   puts "stack: #{$i.stack.inspect}"
+end
 end
 
-require 'irb'
-require 'irb/completion'
-IRB.start
+#module Kernel
+#  def l; load __FILE__ end
+#  def ev(str); $i.eval(str); end
+#end
+#require 'irb'
+#require 'irb/completion'
+#IRB.start
 end
