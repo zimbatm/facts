@@ -109,10 +109,9 @@ end
 class ConditionsTests < Test::Unit::TestCase
   include FactsHelper
 
-  #def test_if
-  #  assert_equal(["ok"], ev('"ok" 1 if'))
-  #  assert_equal([], ev('6 1 not if'))
-  #end
+  def test_if
+    assert_stack ["ok"], "1 ['ok] [[not ok]] if"
+  end
 end
 
 

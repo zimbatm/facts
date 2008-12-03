@@ -9,6 +9,7 @@ module Facts
   # All errors inherit from this
   class Error < StandardError; end
 
+  class AxiomError < Error; end
   class StackUnderflow < Error; end
   class StackOverflow < Error; end
   class WordNotFound < Error; end
@@ -40,7 +41,7 @@ module Facts
           case c
           when EOF: return nil
           when /\s/: next
-          when "[":
+          when "[": 
             type = :quote
             par_count = 1
           else
@@ -101,7 +102,7 @@ module Facts
     def call(name) # motor
       #name = name.to_s
       if w = @dict[name]
-        instance_eval(&w)
+        w.call(self)
       else # other lookups
         case name
         when /^\[.*\]$/ # quote
@@ -142,15 +143,18 @@ module Facts
     # The block must return an array representing the resulting output stack
     def axiom(name, &block)
       raise ArgumentError, "block arity must be positive" if block.arity < 0
-      @dict[name.to_s] = proc do
+      @dict[name.to_s] = proc do |i|
         _ar = block.arity
-        raise(StackUnderflow, "got #{@stack.size} in #{_ar} for `#{name}`") if @stack.size < _ar
-
         args = []
-        _ar.times { args.unshift pop } if _ar > 0
-        ret = block.call(*args)
+        if _ar > 0
+          _ar -= 1
+          raise StackUnderflow, "got #{i.stack.size} in #{_ar} for `#{name}`" if i.stack.size < _ar
+          _ar.times { args.unshift i.pop }
+	end
 
-        ret.each{|e| push(e) }
+        ret = block.call(i, *args)
+
+        ret.each{|e| i.push(e) }
       end 
     end
  
@@ -176,21 +180,21 @@ module Facts
     # TODO: put a warning if a word is redefined ?
     # FIXME: dict not working ?
     # NOTE: It seems like different dicts are used in different places
-    axiom :def do |quot,name|
-      @dict[name.to_s] = proc do eval(quot) end
+    axiom :def do |i,quot,name|
+      i.dict[name.to_s] = proc do |i| i.eval(quot) end
       []
     end
 
-    axiom :eval do |quot|
-      eval(quot)
+    axiom :eval do |i,quot|
+      i.eval(quot)
       []
     end
 
-    axiom :words do ||
+    axiom :words do |_|
       [words]
     end
 
-    axiom :print do |a|
+    axiom :print do |_,a|
       puts a
       []
     end
@@ -198,78 +202,77 @@ module Facts
 ## Stack manipulation:
 
     # (a -- a a)
-    axiom :dup do |a|
+    axiom :dup do |_,a|
       [a,a]
     end
 
     # (a --)
-    axiom :drop do |a| [] end
+    axiom :drop do |_,a| [] end
 
     # (a b -- a b a)
-    axiom :over do |a,b|
+    axiom :over do |_,a,b|
       [a,b,a]
     end
 
     # (a b -- b a)
-    axiom :swap do |a,b|
+    axiom :swap do |_,a,b|
       [b,a]
     end
 
     # (a b -- b)
-    axiom :nip do |a,b|
+    axiom :nip do |_,a,b|
       [b]
     end
 
 ## Arithmetic:
 
     # (a b -- (a+b) )
-    axiom :add do |a,b|
+    axiom :add do |_,a,b|
       [a+b]
     end
 
     # (a -- ~a)
-    axiom :not do |a|
+    axiom :not do |_,a|
       [!a]
     end
 
     # (a b -- (a&b) )
-    axiom :and do |a,b|
+    axiom :and do |_,a,b|
       [a & b]
     end
 
     # (a b -- (a|b) )
-    axiom :or do |a,b|
+    axiom :or do |_,a,b|
       [a | b]
     end
 
     # (a b -- (a^b) )
-    axiom :xor do |a,b|
+    axiom :xor do |_,a,b|
       [a^b]
     end
 
     # (a -- (a>>1) )
-    axiom :rshift1 do |a|
+    axiom :rshift1 do |_,a|
       [ a >> 1 ]
     end
 
-    axiom :true do ||
+    axiom :true do |_|
       [ true ]
     end
 
-    axiom :false do ||
+    axiom :false do |_|
       [ false ]
     end
 
-    axiom :nil do ||
+    axiom :nil do |_|
       [ nil ]
     end
 
 ## Flow control:
   
     # blk cond -- blk
-    axiom :if do |quot_f,quot_t,quot_cond| # FIXME
-      eval quot_cond
-      eval(pop ? quot_t : quot_f)
+    axiom :if do |i,cond,quot_t,quot_f| # FIXME
+      i.eval(cond ? quot_t : quot_f)
       []
     end
 
