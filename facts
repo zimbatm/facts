@@ -1,0 +1,31 @@
+#!/usr/bin/env ruby
+
+require 'core/facts'
+require 'optparse'
+
+$i = Facts::Interp.new
+$i.axiom :exit do || exit end
+$i.axiom :path do || File.expand_path File.dirname(__FILE__) end
+$i.eval("path '/prelude.fc add import")
+
+# Welcome msg
+puts "Use Ctrl+d or the `exit` word to exit"
+
+# REPL loop
+loop do
+begin
+   putc ">"
+   putc " "
+   line = gets
+   exit unless line
+   $i.eval line
+rescue Facts::Error => ex
+   puts "*** #{ex.class.name.gsub(/.*::/,'')}: #{ex.message}"
+ensure
+   puts "words: #{$i.words.join ' '}"
+   puts "stack: #{$i.stack.inspect}"
+end
+end
+
+
+

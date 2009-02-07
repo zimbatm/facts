@@ -1,0 +1,5 @@
+[ drop ]'# def
+[ This was the commenting word, just drops last quotation ]#
+
+[ Useless word, just for testing ]#
+[ 'moo ]'moo def

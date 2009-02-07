@@ -1,0 +1,4 @@
+== Parser
+
+* add shebang exclusion when parsing files
+* pragmas ?

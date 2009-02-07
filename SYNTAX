@@ -1,0 +1,18 @@
+== Base syntax
+
+[moo]  quote
+'moo   single-quote (equivalent)
+other  word
+
+== Word lookup
+
+If the word is not in the hash-table, some hooks are set to 
+detect: fixnum, float, .. (other ?)
+
+Micro-macros could be implemented, for example for units ? 10px => Pixel.new(10)
+
+== Core words
+
+The idea is to create a minimal subset of words that can implement the other words. The definitive list is not yet
+defined. (line nand is usable to build all other logic)
+

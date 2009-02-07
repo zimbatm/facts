@@ -113,7 +113,7 @@ module Facts
           push(name.to_i)
         when /^[+-]?\d+\.\d+$/ # float
           push(name.to_f)
-        # TODO: add hooks for extensible types
+        # TODO: add hooks for extensible types / macros
         else
           raise WordNotFound, "word `#{name}` does not exist in dictionary"
         end
@@ -150,7 +150,7 @@ module Facts
           _ar -= 1
           raise StackUnderflow, "got #{i.stack.size} in #{_ar} for `#{name}`" if i.stack.size < _ar
           _ar.times { args.unshift i.pop }
-	end
+	      end
 
         ret = block.call(i, *args)
 
@@ -267,6 +267,11 @@ module Facts
     axiom :nil do |_|
       [ nil ]
     end
+    
+    axiom :import do |i,path|
+      i.eval File.read(path)
+      [ ]
+    end
 
 ## Flow control:
   
@@ -278,42 +283,134 @@ module Facts
 
 ## Other words:
     
-    eval "[drop] '# def" # is a comment, like [some comment]#
+    #eval "[drop] '# def" # is a comment, like [some comment]#
 
   end # Interp.instance_eval &b
 
 end
 
-if __FILE__ == $0
+if __FILE__ == $0 # Run tests
+  require 'test/unit'
 
-# REPL
-$i = Facts::Interp.new
+  module FactsHelper
+    def f(*stack)
+      f = Facts::Interp.new
+      f.__send__ :instance_variable_set, "@stack", stack
+      f
+    end
+    def assert_stack(stack, str)
+      case str
+      when String
+        str = f.eval(str)
+      end
+      s2 = str.stack
+      assert_equal(stack, s2)
+    end
+  end
 
-$i.axiom :exit do || exit end
+  class StackManipTests < Test::Unit::TestCase
+    include FactsHelper
 
-# Welcome
-puts "Use Ctrl+d or the `exit` word to exit"
+    def test_dup
+      assert_stack ["a", "a"], "'a dup"
+    end
 
-loop do
-begin
-   putc ">"
-   putc " "
-   line = gets
-   exit unless line
-   $i.eval line
-rescue Facts::Error => ex
-   puts "*** #{ex.class.name.gsub(/.*::/,'')}: #{ex.message}"
-ensure
-   puts "words: #{$i.words.join ' '}"
-   puts "stack: #{$i.stack.inspect}"
-end
-end
+    def test_drop
+      assert_stack ["a"], "'a 'b drop"
+    end
 
-#module Kernel
-#  def l; load __FILE__ end
-#  def ev(str); $i.eval(str); end
-#end
-#require 'irb'
-#require 'irb/completion'
-#IRB.start
+    def test_over
+      assert_stack ["a", "b", "a"], "'a 'b over"
+    end
+
+    def test_swap
+      assert_stack ["b", "a"], "'a 'b swap"
+    end
+
+    def test_nip
+      assert_stack ["b"] , "'a 'b nip"
+    end
+
+  end
+
+  class BaseArithTests < Test::Unit::TestCase
+    include FactsHelper
+
+    def test_add
+      assert_stack [3] , "1 2 add"
+      assert_stack [-1], "1 -2 add"
+    end
+
+    def test_not
+      assert_stack [false] , "true not"
+      assert_stack [false] , "1 not"
+    end
+
+    def test_and
+      assert_stack [1] , "7 9 and"
+    end
+
+    def test_or
+      assert_stack [15] , "7 9 or"
+    end
+
+    def test_xor
+      assert_stack [14], "7 9 xor"
+    end
+
+    def test_rshift1
+      assert_stack [2], "4 rshift1"
+    end
+  end
+
+  class WordOperationsTests < Test::Unit::TestCase
+    include FactsHelper
+    WORD_COUNT = Facts::Interp.words.size
+
+    def test_parse
+      assert_stack [6, "6", 6], "6 [6] 6"
+    end
+
+    def test_recurse_parent_match
+      assert_stack [" some [rec [ urs [ ive ] ] ] stack "], "[ some [rec [ urs [ ive ] ] ] stack ] "
+    end
+
+    def test_def
+      x = f()
+      x.eval "[add] '+ def"
+      assert x.words.include?("+")
+
+      x.eval " 3 2 + "
+      assert_stack [5], x
+    end
+
+    #def test_call
+    #  assert_equal([13], s([7, 6, :add]).call)
+    #end
+
+    def test_no_side_effects
+      assert_equal 0, Facts::Interp.stack.size
+      assert_equal WORD_COUNT, Facts::Interp.words.size
+    end
+
+  end
+
+  class ConditionsTests < Test::Unit::TestCase
+    include FactsHelper
+
+    def test_if
+      assert_stack ["ok"], "1 ['ok] [[not ok]] if"
+    end
+  end
+
+
+  class RubyChainingTests < Test::Unit::TestCase
+    include FactsHelper
+
+    def test_simple_case
+      assert_stack [6], f["3"]["3"].add
+    end
+
+  end
+
 end
